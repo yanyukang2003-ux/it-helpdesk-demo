@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 智能助手</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-title">AI 助手</div>
+      <div class="user-info">
+        <label>工号</label>
+        <input type="text" id="user-userId" placeholder="anonymous">
+        <label>姓名</label>
+        <input type="text" id="user-userName" placeholder="可选">
+        <label>部门</label>
+        <input type="text" id="user-department" placeholder="可选">
+      </div>
+      <div class="header-actions">
+        <button class="btn" id="btn-onboarding" title="查看介绍">介绍</button>
+        <button class="btn" id="btn-history">Checkpoints</button>
+        <button class="btn" id="btn-reset">新会话</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Stepper Panel (left) -->
+      <div class="graph-panel" id="graph-panel">
+        <div class="graph-panel-title">Agent 执行流程</div>
+        <div id="graph-container"></div>
+      </div>
+
+      <!-- Chat Panel (right) -->
+      <div class="chat-panel">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-area">
+          <div id="autocomplete-dropdown" class="autocomplete-dropdown"></div>
+          <div class="input-row">
+            <textarea
+              id="chat-input"
+              class="chat-input"
+              placeholder="输入你的 IT 问题，例如：VPN 怎么连接？"
+              rows="1"
+              autofocus
+            ></textarea>
+            <button id="send-btn" class="send-btn">发送</button>
+            <button id="interrupt-btn" class="interrupt-btn" style="display:none">中断</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modification Panel (bottom drawer) -->
+    <div class="modification-panel" id="modification-panel"></div>
+
+    <!-- Checkpoint Panel (right slide-in) -->
+    <div class="checkpoint-panel" id="checkpoint-panel"></div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+  </div>
+
+  <script type="module">
+    import { initApp, resetChat } from './js/app.js';
+    import { toggleCheckpointPanel } from './js/branch.js';
+    import { openOnboarding, maybeShowOnboarding } from './js/onboarding.js';
+
+    initApp();
+    maybeShowOnboarding();
+
+    document.getElementById('btn-reset').addEventListener('click', resetChat);
+    document.getElementById('btn-history').addEventListener('click', toggleCheckpointPanel);
+    document.getElementById('btn-onboarding').addEventListener('click', openOnboarding);
+  </script>
+</body>
+</html>

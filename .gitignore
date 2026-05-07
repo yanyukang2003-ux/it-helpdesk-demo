@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 环境变量（包含密钥，不要提交！）
+.env
+
+# 向量数据库（可重新生成）
+chroma_db/
+
+# LangGraph SQLite checkpoints（可选持久化）
+checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 测试
+.pytest_cache/
+htmlcov/
+.coverage
+
+# 日志
+*.log

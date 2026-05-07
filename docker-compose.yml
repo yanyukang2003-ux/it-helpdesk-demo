@@ -1,0 +1,18 @@
+# ==================================================
+# Docker Compose - 本地开发环境
+# ==================================================
+# 启动: docker compose up --build
+# 停止: docker compose down
+
+services:
+  agent:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # 挂载知识库和向量数据库目录，方便本地开发
+      - ./knowledge_base:/app/knowledge_base
+      - ./chroma_db:/app/chroma_db
+    restart: unless-stopped
