@@ -116,6 +116,7 @@ export function onError(event) {
 
 export function dispatchSSE(event) {
   switch (event.type) {
+    case 'run_started':    state.threadId = event.thread_id || state.threadId; renderGraph(); break;
     case 'plan_complete':  onPlanComplete(event);  break;
     case 'step_complete':  onStepComplete(event);  break;
     case 'thread_forked':  onThreadForked(event);  break;

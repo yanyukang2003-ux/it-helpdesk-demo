@@ -253,6 +253,8 @@ def _do_answer(step, plan, outputs, question, style_hint: str = ""):
 
 def stream_run(thread_id: str, user_message: str) -> Iterator[dict]:
     """完整执行：先 plan，再逐步 execute；产出 SSE event 字典。"""
+    # 立即发送启动事件，避免 Render proxy 在 OpenAI 调用期间断开连接
+    yield {"type": "run_started", "thread_id": thread_id}
     plan = plan_steps(user_message)
     state = RunState(thread_id=thread_id, user_message=user_message, plan=plan)
     RUNS[thread_id] = state
