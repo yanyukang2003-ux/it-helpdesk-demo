@@ -265,7 +265,7 @@ def stream_run(thread_id: str, user_message: str) -> Iterator[dict]:
     yield {
         "type": "plan_complete",
         "thread_id": thread_id,
-        "steps": [asdict(s) for s in plan],
+        "total_steps": len(plan),
     }
 
     for i, step in enumerate(plan):
@@ -324,7 +324,7 @@ def stream_branch(
         yield {
             "type": "plan_complete",
             "thread_id": src.thread_id,
-            "steps": [asdict(s) for s in src.plan],
+            "total_steps": len(src.plan),
         }
         for i, step in enumerate(src.plan):
             out = execute_step(step, src.plan, src.outputs, src.user_message, i)

@@ -37,10 +37,12 @@ export const state = {
 
 export function onPlanComplete(event) {
   state.threadId = event.thread_id || state.threadId;
-  state.totalSteps = (event.steps || []).length;
-  state.steps = (event.steps || []).map((s, i) => ({
+  const total = event.total_steps || 0;
+  state.totalSteps = total;
+  // Create placeholder slots without step details — titles revealed on step_complete
+  state.steps = Array.from({ length: total }, (_, i) => ({
     index: i,
-    step: s,
+    step: null,
     output: null,
     status: 'pending',
     checkpointId: null,

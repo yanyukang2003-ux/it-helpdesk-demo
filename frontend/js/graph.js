@@ -283,16 +283,18 @@ function renderEmpty() {
 
 function renderPlanProgress(done, total) {
   const pct = Math.round((done / total) * 100);
-  const stepTitles = state.steps.map((s, i) => {
+  // Only show dots for completed steps — future steps stay hidden for progressive reveal
+  const dots = state.steps.map((s, i) => {
+    if (i >= done && !(i === done && state.isStreaming)) return '';
     const doneClass = i < done ? ' done' : '';
     const activeClass = i === done && state.isStreaming ? ' active' : '';
     return `<span class="plan-dot${doneClass}${activeClass}" title="${escapeHtml(s.step?.title || '')}"></span>`;
-  }).join('');
+  }).filter(Boolean).join('');
   return `
     <div class="plan-progress">
       <div class="plan-progress-head">
         <span class="plan-progress-label">${done}/${total} 步</span>
-        <span class="plan-progress-dots">${stepTitles}</span>
+        ${dots ? `<span class="plan-progress-dots">${dots}</span>` : ''}
       </div>
       <div class="plan-progress-track">
         <div class="plan-progress-fill" style="width:${pct}%"></div>
@@ -311,15 +313,16 @@ function renderPendingSummary(count) {
 }
 
 function renderNextStepPreview(nextStep) {
-  const meta = nextStep.step ? (KIND_META[nextStep.step.kind] || KIND_META.reasoning) : { label: '', iconPath: '', tone: '' };
+  const hasStep = nextStep.step != null;
+  const meta = hasStep ? (KIND_META[nextStep.step.kind] || KIND_META.reasoning) : null;
   return `
     <div class="node node-running">
       <div class="node-rail"><span class="node-dot"></span></div>
       <div class="node-card">
         <header class="node-head">
-          <span class="node-icon">${nodeIconSvg(meta.iconPath)}</span>
-          <span class="node-title">${escapeHtml(nextStep.step?.title || '下一步')}</span>
-          <span class="node-kind-tag tone-${meta.tone}">${meta.label}</span>
+          ${meta ? `<span class="node-icon">${nodeIconSvg(meta.iconPath)}</span>` : ''}
+          <span class="node-title">${escapeHtml(nextStep.step?.title || '执行中…')}</span>
+          ${meta ? `<span class="node-kind-tag tone-${meta.tone}">${meta.label}</span>` : ''}
           <span class="node-status">思考中</span>
         </header>
         <div class="node-thinking"><span></span><span></span><span></span></div>
