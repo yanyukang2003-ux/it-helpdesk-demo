@@ -905,6 +905,55 @@ button { font-family: inherit; }
 
 .node-terminus .node-rail { padding-top: 18px; }
 
+/* ---- Plan overview (progressive reveal) ---- */
+.plan-step-list {
+  list-style: none;
+  margin-top: 10px;
+  padding: 0;
+}
+
+.plan-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.plan-step-item + .plan-step-item {
+  border-top: 1px solid var(--border-light);
+}
+
+.plan-step-idx {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.plan-step-icon {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.plan-step-title {
+  flex: 1;
+}
+
+.plan-step-kind {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* =============================================================
    Chat panel
    ============================================================= */

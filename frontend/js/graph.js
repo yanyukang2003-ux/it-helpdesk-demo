@@ -281,6 +281,47 @@ function renderEmpty() {
     </div>`;
 }
 
+function renderPlanOverview() {
+  const planList = state.steps.map((s, i) => {
+    const meta = s.step ? (KIND_META[s.step.kind] || KIND_META.reasoning) : { label: '', iconPath: '', tone: '' };
+    return `
+      <li class="plan-step-item">
+        <span class="plan-step-idx">${i + 1}</span>
+        <span class="plan-step-icon">${nodeIconSvg(meta.iconPath)}</span>
+        <span class="plan-step-title">${escapeHtml(s.step?.title || `步骤 ${i + 1}`)}</span>
+        <span class="plan-step-kind">${meta.label}</span>
+      </li>`;
+  }).join('');
+  return `
+    <div class="node node-done">
+      <div class="node-rail"><span class="node-dot"></span></div>
+      <div class="node-card">
+        <header class="node-head">
+          <span class="node-title">流程规划完成 · 共${state.steps.length}步</span>
+          <span class="node-status node-status-done">完成</span>
+        </header>
+        <ul class="plan-step-list">${planList}</ul>
+      </div>
+    </div>`;
+}
+
+function renderNextStepPreview(nextStep) {
+  const meta = nextStep.step ? (KIND_META[nextStep.step.kind] || KIND_META.reasoning) : { label: '', iconPath: '', tone: '' };
+  return `
+    <div class="node node-running">
+      <div class="node-rail"><span class="node-dot"></span></div>
+      <div class="node-card">
+        <header class="node-head">
+          <span class="node-icon">${nodeIconSvg(meta.iconPath)}</span>
+          <span class="node-title">${escapeHtml(nextStep.step?.title || '下一步')}</span>
+          <span class="node-kind-tag tone-${meta.tone}">${meta.label}</span>
+          <span class="node-status">思考中</span>
+        </header>
+        <div class="node-thinking"><span></span><span></span><span></span></div>
+      </div>
+    </div>`;
+}
+
 function renderPlanningPlaceholder() {
   return `
     <div class="node node-running">
@@ -314,10 +355,23 @@ export function renderGraph() {
   if (state.steps.length === 0 && state.isStreaming) {
     html += renderPlanningPlaceholder();
   } else {
-    for (let i = 0; i < state.steps.length; i++) {
-      const item = state.steps[i];
-      const isLast = i === state.steps.length - 1 && !state.isStreaming;
-      html += renderNode(item, isLast);
+    // Progressive reveal: only show completed + currently-running steps
+    const visibleSteps = state.steps.filter(s => s.status !== 'pending');
+    // If all steps are still pending (plan just created), show plan overview
+    if (visibleSteps.length === 0 && state.steps.length > 0) {
+      html += renderPlanOverview();
+    } else {
+      const lastCompletedIdx = visibleSteps.length > 0
+        ? visibleSteps[visibleSteps.length - 1].index
+        : -1;
+      for (const item of visibleSteps) {
+        const isLast = item.index === lastCompletedIdx && !state.isStreaming;
+        html += renderNode(item, isLast);
+      }
+      // If streaming, show next pending step as ghost
+      if (state.isStreaming && lastCompletedIdx + 1 < state.steps.length) {
+        html += renderNextStepPreview(state.steps[lastCompletedIdx + 1]);
+      }
     }
   }
 
