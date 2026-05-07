@@ -281,26 +281,31 @@ function renderEmpty() {
     </div>`;
 }
 
-function renderPlanOverview() {
-  const planList = state.steps.map((s, i) => {
-    const meta = s.step ? (KIND_META[s.step.kind] || KIND_META.reasoning) : { label: '', iconPath: '', tone: '' };
-    return `
-      <li class="plan-step-item">
-        <span class="plan-step-idx">${i + 1}</span>
-        <span class="plan-step-icon">${nodeIconSvg(meta.iconPath)}</span>
-        <span class="plan-step-title">${escapeHtml(s.step?.title || `步骤 ${i + 1}`)}</span>
-        <span class="plan-step-kind">${meta.label}</span>
-      </li>`;
+function renderPlanProgress(done, total) {
+  const pct = Math.round((done / total) * 100);
+  const stepTitles = state.steps.map((s, i) => {
+    const doneClass = i < done ? ' done' : '';
+    const activeClass = i === done && state.isStreaming ? ' active' : '';
+    return `<span class="plan-dot${doneClass}${activeClass}" title="${escapeHtml(s.step?.title || '')}"></span>`;
   }).join('');
   return `
-    <div class="node node-done">
-      <div class="node-rail"><span class="node-dot"></span></div>
-      <div class="node-card">
-        <header class="node-head">
-          <span class="node-title">流程规划完成 · 共${state.steps.length}步</span>
-          <span class="node-status node-status-done">完成</span>
-        </header>
-        <ul class="plan-step-list">${planList}</ul>
+    <div class="plan-progress">
+      <div class="plan-progress-head">
+        <span class="plan-progress-label">${done}/${total} 步</span>
+        <span class="plan-progress-dots">${stepTitles}</span>
+      </div>
+      <div class="plan-progress-track">
+        <div class="plan-progress-fill" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+}
+
+function renderPendingSummary(count) {
+  return `
+    <div class="node">
+      <div class="node-rail"><span class="node-dot" style="opacity:0.3"></span></div>
+      <div class="node-card" style="opacity:0.4">
+        <span style="font-size:12px;color:var(--text-muted)">还有 ${count} 步待执行</span>
       </div>
     </div>`;
 }
@@ -355,23 +360,35 @@ export function renderGraph() {
   if (state.steps.length === 0 && state.isStreaming) {
     html += renderPlanningPlaceholder();
   } else {
-    // Progressive reveal: only show completed + currently-running steps
-    const visibleSteps = state.steps.filter(s => s.status !== 'pending');
-    // If all steps are still pending (plan just created), show plan overview
-    if (visibleSteps.length === 0 && state.steps.length > 0) {
-      html += renderPlanOverview();
-    } else {
-      const lastCompletedIdx = visibleSteps.length > 0
-        ? visibleSteps[visibleSteps.length - 1].index
-        : -1;
-      for (const item of visibleSteps) {
-        const isLast = item.index === lastCompletedIdx && !state.isStreaming;
-        html += renderNode(item, isLast);
-      }
-      // If streaming, show next pending step as ghost
-      if (state.isStreaming && lastCompletedIdx + 1 < state.steps.length) {
-        html += renderNextStepPreview(state.steps[lastCompletedIdx + 1]);
-      }
+    // Progressive reveal: plan overview + only completed steps
+    const completed = state.steps.filter(s => s.status === 'completed');
+    const hasPlan = state.steps.length > 0;
+
+    if (hasPlan) {
+      // Always show a compact plan progress bar
+      html += renderPlanProgress(completed.length, state.steps.length);
+    }
+
+    if (completed.length === 0 && !state.isStreaming && state.steps.length > 0) {
+      // Plan created but no steps run yet (unlikely, but handle gracefully)
+    }
+
+    // Render completed steps
+    for (let i = 0; i < completed.length; i++) {
+      const item = completed[i];
+      const isLast = i === completed.length - 1 && !state.isStreaming;
+      html += renderNode(item, isLast);
+    }
+
+    // Show currently running step
+    if (state.isStreaming && completed.length < state.steps.length) {
+      html += renderNextStepPreview(state.steps[completed.length]);
+    }
+
+    // Remaining pending steps: show as compact summary
+    const remaining = state.steps.length - completed.length - (state.isStreaming ? 1 : 0);
+    if (!state.isStreaming && remaining > 0 && completed.length > 0) {
+      html += renderPendingSummary(remaining);
     }
   }
 

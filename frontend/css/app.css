@@ -905,53 +905,67 @@ button { font-family: inherit; }
 
 .node-terminus .node-rail { padding-top: 18px; }
 
-/* ---- Plan overview (progressive reveal) ---- */
-.plan-step-list {
-  list-style: none;
-  margin-top: 10px;
-  padding: 0;
+/* ---- Plan progress (progressive reveal) ---- */
+.plan-progress {
+  padding: 0 0 14px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
 }
 
-.plan-step-item {
+.plan-progress-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 0;
-  font-size: 12.5px;
-  color: var(--text-secondary);
+  gap: 12px;
+  margin-bottom: 8px;
 }
 
-.plan-step-item + .plan-step-item {
-  border-top: 1px solid var(--border-light);
-}
-
-.plan-step-idx {
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  background: var(--border-light);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
+.plan-progress-label {
+  font-size: 11.5px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
-.plan-step-icon {
-  flex-shrink: 0;
-  opacity: 0.5;
+.plan-progress-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
-.plan-step-title {
-  flex: 1;
+.plan-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--border);
+  transition: background var(--duration-sm) var(--ease-out);
 }
 
-.plan-step-kind {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  flex-shrink: 0;
+.plan-dot.done {
+  background: var(--accent-soft);
+}
+
+.plan-dot.active {
+  background: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.4); }
+}
+
+.plan-progress-track {
+  height: 3px;
+  background: var(--border-light);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.plan-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  transition: width 0.5s var(--ease-out);
 }
 
 /* =============================================================
