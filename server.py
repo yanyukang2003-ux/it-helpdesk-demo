@@ -147,11 +147,11 @@ async def chat(req: ChatRequest):
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatRequest):
-    """流式：plan_complete → step_complete × N → done"""
+def chat_stream(req: ChatRequest):
+    """流式：run_started → plan_complete → step_complete × N → done"""
     thread_id = req.thread_id or str(uuid.uuid4())
 
-    async def event_generator():
+    def event_generator():
         try:
             for ev in stream_run(thread_id, req.message):
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
@@ -162,7 +162,11 @@ async def chat_stream(req: ChatRequest):
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )
 
 
@@ -174,7 +178,7 @@ async def get_thread_checkpoints(thread_id: str, limit: int = Query(100, ge=1, l
 
 
 @app.post("/threads/branch")
-async def branch_endpoint(req: BranchRequest):
+def branch_endpoint(req: BranchRequest):
     """从某 step 分叉重跑（流式返回新事件）。"""
     if req.source_thread_id not in RUNS:
         raise HTTPException(status_code=400, detail="不存在的会话或会话已过期")
@@ -195,7 +199,7 @@ async def branch_endpoint(req: BranchRequest):
     style_hint = override.get("style_hint")
     alt_idx = override.get("alt_idx")
 
-    async def event_generator():
+    def event_generator():
         try:
             for ev in stream_branch(
                 req.source_thread_id,
@@ -216,7 +220,11 @@ async def branch_endpoint(req: BranchRequest):
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )
 
 
