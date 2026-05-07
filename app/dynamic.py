@@ -54,6 +54,7 @@ class Step:
 class StepOutput:
     primary: str
     alternatives: list[str] = field(default_factory=list)
+    alt_summaries: list[str] = field(default_factory=list)  # 每条备选的简短特征（≤12字）
     metadata: dict[str, Any] = field(default_factory=dict)
     style_hint: str = ""              # 当前 step 应用的风格（仅 answer 类）
     selected_alt_idx: int = 0         # 当前选中的 primary 来自第几条候选（0=主路径）
@@ -202,7 +203,9 @@ def _do_thought(step, plan, outputs, question, idx):
     primary = str(data.get("primary", "")).strip() or raw.strip()[:300]
     alts_raw = data.get("alternatives") or []
     alternatives = [str(a).strip() for a in alts_raw if isinstance(a, (str, int))][:3]
-    return StepOutput(primary=primary, alternatives=alternatives)
+    sums_raw = data.get("alt_summaries") or []
+    alt_summaries = [str(s).strip()[:12] for s in sums_raw if isinstance(s, (str, int))][:len(alternatives)]
+    return StepOutput(primary=primary, alternatives=alternatives, alt_summaries=alt_summaries)
 
 
 def _do_retrieval(step, question):

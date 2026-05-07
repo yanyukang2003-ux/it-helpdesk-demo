@@ -811,6 +811,23 @@ button { font-family: inherit; }
 
 .branch-item.is-selected .branch-label { color: var(--accent); }
 
+.branch-summary {
+  font-size: 10.5px;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  padding: 1px 7px;
+  border-radius: var(--radius-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.branch-detail {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .branch-current {
   font-size: 10.5px;
   color: var(--accent);

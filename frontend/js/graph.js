@@ -121,6 +121,7 @@ function buildBranchesFor(item) {
   }
 
   // analysis / reasoning / summarize
+  const summaries = output.alt_summaries || [];
   const list = [
     {
       key: 'primary',
@@ -134,6 +135,7 @@ function buildBranchesFor(item) {
     ...((output.alternatives || []).map((alt, i) => ({
       key: `alt-${i}`,
       label: `思路 ${String.fromCharCode(65 + i)}`,
+      summary: summaries[i] || '',
       content: alt,
       selected: (selectedAltIdx ?? 0) === i + 1,
       cta: '用这个',
@@ -164,6 +166,13 @@ function renderBranches(item, expanded) {
     const ctaHtml = !b.selected
       ? `<button class="branch-cta" data-step-idx="${item.index}" data-kind="${b.kind}" data-payload='${escapeAttr(JSON.stringify(b.payload))}'>${b.cta}</button>`
       : `<span class="branch-current">当前</span>`;
+    const isAlt = b.kind === 'alt';
+    const summaryTag = isAlt && b.summary
+      ? `<span class="branch-summary">${escapeHtml(b.summary)}</span>`
+      : '';
+    const detailHtml = isAlt
+      ? `<div class="branch-detail">${escapeHtml(truncate(b.content, 120))}</div>`
+      : `<div class="branch-content">${escapeHtml(truncate(b.content, 200))}</div>`;
     return `
       <li class="branch-item${sCls}">
         <div class="branch-line"></div>
@@ -171,9 +180,10 @@ function renderBranches(item, expanded) {
           <div class="branch-head">
             ${PATH_DOT}
             <span class="branch-label">${escapeHtml(b.label)}</span>
+            ${summaryTag}
             ${ctaHtml}
           </div>
-          <div class="branch-content">${escapeHtml(truncate(b.content, 200))}</div>
+          ${detailHtml}
         </div>
       </li>`;
   }).join('');
