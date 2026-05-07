@@ -12,6 +12,7 @@ import { streamChat, fetchCheckpoints, consumeSSE } from './api.js';
 import { renderChat, setupChatInput } from './chat.js';
 import { renderGraph, resetGraph } from './graph.js';
 import { closeModificationPanel } from './branch.js';
+import { initSessionManager, saveSessionState } from './session.js';
 
 // ---- State ---------------------------------------------------------
 
@@ -28,11 +29,6 @@ export const state = {
   expandedBranches: {},  // keyed by step index
 
   checkpoints: [],
-  userInfo: {
-    userId: localStorage.getItem('helpdesk_userId') || '',
-    userName: localStorage.getItem('helpdesk_userName') || '',
-    department: localStorage.getItem('helpdesk_department') || '',
-  },
   activeModification: null,
   lastUserMessage: '',
 };
@@ -86,6 +82,7 @@ export function onDone(event) {
 
   if (event.reply) {
     state.messages.push({ role: 'ai', content: event.reply });
+    saveSessionState();
   }
 
   renderChat();
@@ -133,6 +130,7 @@ export async function sendMessage(message) {
   state.isStreaming = true;
   state.lastUserMessage = message.trim();
   state.messages.push({ role: 'user', content: message.trim() });
+  saveSessionState();
 
   // Reset graph for new run
   state.steps = [];
@@ -148,9 +146,6 @@ export async function sendMessage(message) {
   try {
     const response = await streamChat({
       message: message.trim(),
-      userId: state.userInfo.userId,
-      userName: state.userInfo.userName,
-      department: state.userInfo.department,
       threadId: state.threadId,
     }, controller.signal);
     await consumeSSE(response, dispatchSSE);
@@ -197,27 +192,10 @@ export function resetChat() {
   renderGraph();
 }
 
-// ---- User info -----------------------------------------------------
-
-function setupUserInfo() {
-  const fields = ['userId', 'userName', 'department'];
-  for (const field of fields) {
-    const el = document.getElementById(`user-${field}`);
-    if (!el) continue;
-    el.value = state.userInfo[field];
-    el.addEventListener('change', () => {
-      state.userInfo[field] = el.value;
-      localStorage.setItem(`helpdesk_${field}`, el.value);
-    });
-  }
-}
-
 // ---- Init ----------------------------------------------------------
 
 export function initApp() {
-  setupUserInfo();
   setupChatInput();
-  renderChat();
-  renderGraph();
+  initSessionManager();
 }
 

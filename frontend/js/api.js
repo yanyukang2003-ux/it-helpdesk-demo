@@ -4,15 +4,15 @@
 
 const API_BASE = window.location.origin;
 
-export async function streamChat({ message, userId, userName, department, threadId }, signal) {
+export async function streamChat({ message, threadId }, signal) {
   const resp = await fetch(`${API_BASE}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message,
-      user_id: userId || 'anonymous',
-      user_name: userName || '',
-      user_department: department || '',
+      user_id: 'anonymous',
+      user_name: '',
+      user_department: '',
       thread_id: threadId || null,
     }),
     signal,

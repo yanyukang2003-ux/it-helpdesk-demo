@@ -9,6 +9,7 @@ import { state, dispatchSSE } from './app.js';
 import { streamBranch, fetchCheckpoints, consumeSSE } from './api.js';
 import { renderChat } from './chat.js';
 import { renderGraph } from './graph.js';
+import { saveSessionState } from './session.js';
 
 const KIND_LABELS = {
   analysis: '分析', retrieval: '检索', reasoning: '推断',
@@ -131,6 +132,7 @@ export function renderModificationPanel() {
     if (newMsg !== state.lastUserMessage) {
       state.messages.push({ role: 'user', content: newMsg });
       state.lastUserMessage = newMsg;
+      saveSessionState();
     }
     closeModificationPanel();
     renderChat();
