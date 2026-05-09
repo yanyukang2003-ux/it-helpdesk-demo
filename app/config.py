@@ -26,8 +26,8 @@ class Config:
     # RAG 参数
     CHUNK_SIZE: int = 500
     CHUNK_OVERLAP: int = 50
-    RETRIEVER_K: int = 3  # 返回 top-k 个文档块
-    RETRIEVER_FETCH_K: int = 6  # MMR 检索时先取 top-k 再筛选
+    RETRIEVER_K: int = 5  # 返回 top-k 个文档块（扩大给 Re-rank）
+    RETRIEVER_FETCH_K: int = 10  # MMR 检索时先取 top-k 再筛选
 
     # Agent 参数
     CONFIDENCE_THRESHOLD: float = 0.4  # RAG 置信度低于此阈值转人工
