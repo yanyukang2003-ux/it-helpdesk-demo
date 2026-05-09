@@ -25,6 +25,13 @@ from app.dynamic import (
     parse_cp_id,
     RUNS,
 )
+from app.security import (
+    UserContext,
+    Role,
+    detect_injection,
+    desensitize,
+    audit_logger,
+)
 
 
 @asynccontextmanager
@@ -132,14 +139,36 @@ async def predict(req: PredictRequest):
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     """非流式对话；内部完整跑完动态流程后返回最终回答。"""
+    # Prompt Injection 检测
+    inj = detect_injection(req.message)
+    if inj.get("blocked"):
+        user_ctx = UserContext(
+            user_id=req.user_id, user_name=req.user_name,
+            user_department=req.user_department,
+        )
+        audit_logger.log_injection_attempt(user_ctx, req.message, inj)
+        raise HTTPException(status_code=400, detail="输入包含不安全内容，已被拦截")
+
+    # 低风险：注入防御前缀后再传给 LLM
+    safe_message = req.message
+    user_ctx = UserContext(
+        user_id=req.user_id, user_name=req.user_name,
+        user_department=req.user_department,
+    )
+    if inj.get("defensive_prefix"):
+        audit_logger.log_injection_attempt(user_ctx, req.message, inj)
+        safe_message = inj["defensive_prefix"] + req.message
+
     thread_id = req.thread_id or str(uuid.uuid4())
     reply = ""
     try:
-        for ev in stream_run(thread_id, req.message):
+        for ev in stream_run(thread_id, safe_message, user=user_ctx):
             if ev.get("type") == "done":
                 reply = ev.get("reply", "")
         if not reply:
             reply = "抱歉，我暂时无法处理你的请求，请稍后再试。"
+        # 脱敏处理
+        reply = desensitize(reply)
         return ChatResponse(reply=reply, thread_id=thread_id)
     except Exception as e:
         print(f"❌ 处理请求失败: {e}")
@@ -149,11 +178,42 @@ async def chat(req: ChatRequest):
 @app.post("/chat/stream")
 def chat_stream(req: ChatRequest):
     """流式：run_started → plan_complete → step_complete × N → done"""
+    # Prompt Injection 检测
+    inj = detect_injection(req.message)
+    if inj.get("blocked"):
+        user_ctx = UserContext(
+            user_id=req.user_id, user_name=req.user_name,
+            user_department=req.user_department,
+        )
+        audit_logger.log_injection_attempt(user_ctx, req.message, inj)
+
+        def error_gen():
+            yield f"data: {json.dumps({'type': 'error', 'message': '输入包含不安全内容，已被拦截'})}\n\n"
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    # 低风险：注入防御前缀后再传给 LLM
+    safe_message = req.message
+    if inj.get("defensive_prefix"):
+        user_ctx = UserContext(
+            user_id=req.user_id, user_name=req.user_name,
+            user_department=req.user_department,
+        )
+        audit_logger.log_injection_attempt(user_ctx, req.message, inj)
+        safe_message = inj["defensive_prefix"] + req.message
+
     thread_id = req.thread_id or str(uuid.uuid4())
+
+    user_ctx = UserContext(
+        user_id=req.user_id, user_name=req.user_name,
+        user_department=req.user_department,
+    )
 
     def event_generator():
         try:
-            for ev in stream_run(thread_id, req.message):
+            for ev in stream_run(thread_id, safe_message, user=user_ctx):
+                # 脱敏处理
+                if ev.get("type") == "done" and ev.get("reply"):
+                    ev["reply"] = desensitize(ev["reply"])
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
         except Exception as e:
             print(f"❌ stream 失败: {e}")
@@ -226,6 +286,39 @@ def branch_endpoint(req: BranchRequest):
             "Connection": "keep-alive",
         },
     )
+
+
+# --------------------------------------------------
+# MCP Server endpoints
+# --------------------------------------------------
+
+class MCPRequest(BaseModel):
+    method: str = Field(..., examples=["tools/list", "tools/call"])
+    params: dict = Field(default_factory=dict)
+    user_id: str = "anonymous"
+    user_name: str = ""
+    user_department: str = ""
+    session_id: str = ""
+
+
+@app.post("/mcp")
+def mcp_endpoint(req: MCPRequest):
+    """MCP 协议入口：工具发现 + 工具调用（含 RBAC 权限控制）。"""
+    from app.mcp_server import mcp_server
+
+    user = UserContext(
+        user_id=req.user_id,
+        user_name=req.user_name,
+        user_department=req.user_department,
+    )
+    return mcp_server.handle_request(req.method, req.params, user, req.session_id)
+
+
+@app.get("/mcp/tools")
+def mcp_list_tools():
+    """便捷接口：列出所有可用 MCP 工具及其参数 schema。"""
+    from app.mcp_server import mcp_server
+    return mcp_server.handle_request("tools/list", {}, UserContext(user_id="anonymous"), "")
 
 
 # --------------------------------------------------

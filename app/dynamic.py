@@ -26,20 +26,24 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.config import config
-from app.rag import retrieve_with_sources
+from app.rag import retrieve_with_sources, calculate_confidence
 from app.prompts import (
     PLANNER_PROMPT,
     THOUGHT_STEP_PROMPT,
     ANSWER_STEP_PROMPT,
     STYLE_HINTS,
 )
+from app.evaluator import evaluate_and_refine
+from app.security import desensitize_rag_output, UserContext, audit_logger
+from app.mcp_server import mcp_server
+from app.memory import MemoryManager
 
 
 # --------------------------------------------------
 # Data
 # --------------------------------------------------
 
-VALID_KINDS = {"analysis", "retrieval", "reasoning", "summarize", "answer"}
+VALID_KINDS = {"analysis", "retrieval", "tool", "reasoning", "summarize", "answer"}
 
 
 @dataclass
@@ -129,11 +133,17 @@ def _gather_kb_context(outputs: list[StepOutput]) -> str:
 # Planner
 # --------------------------------------------------
 
-def plan_steps(question: str) -> list[Step]:
+def plan_steps(question: str, memory_context: str = "") -> list[Step]:
     """规划 2~6 步流程。失败时回退到默认 2 步。"""
+    # 将记忆上下文拼入用户消息，帮助 Planner 理解对话背景
+    if memory_context and memory_context != "（无历史对话）":
+        contextualized = f"{question}\n\n【对话历史背景】\n{memory_context}"
+    else:
+        contextualized = question
+
     response = planner_llm.invoke([
         SystemMessage(content=PLANNER_PROMPT),
-        HumanMessage(content=question),
+        HumanMessage(content=contextualized),
     ])
     data = _extract_json(str(response.content)) or {}
     raw = data.get("steps") or []
@@ -176,11 +186,15 @@ def execute_step(
     question: str,
     idx: int,
     style_hint: str = "",
+    user: UserContext | None = None,
+    memory_context: str = "",
 ) -> StepOutput:
     if step.kind == "retrieval":
         return _do_retrieval(step, question)
+    if step.kind == "tool":
+        return _do_tool(step, question, user)
     if step.kind == "answer":
-        return _do_answer(step, plan, outputs, question, style_hint=style_hint)
+        return _do_answer(step, plan, outputs, question, style_hint=style_hint, memory_context=memory_context)
     return _do_thought(step, plan, outputs, question, idx)
 
 
@@ -211,33 +225,117 @@ def _do_thought(step, plan, outputs, question, idx):
 def _do_retrieval(step, question):
     query = step.instruction or question
     context, sources = retrieve_with_sources(query)
+    # 脱敏处理：过滤知识库中可能包含的敏感信息
+    context = desensitize_rag_output(context)
     short = []
     for s in sources:
         b = os.path.basename(s) if s else ""
         if b and b not in short:
             short.append(b)
     has = bool(context) and "未找到" not in context and "检索失败" not in context
-    primary = (
-        f"在知识库中查询「{query[:30]}」，命中 {len(short)} 个文档"
-        if has else f"在知识库中查询「{query[:30]}」，未命中相关文档"
-    )
+
+    # 独立置信度评估
+    conf_result = calculate_confidence(query, context, short)
+    should_escalate = conf_result.get("should_escalate", False)
+
+    if has:
+        primary = (
+            f"在知识库中查询「{query[:30]}」，命中 {len(short)} 个文档"
+            f"{'（置信度低，建议转人工）' if should_escalate else ''}"
+        )
+    else:
+        primary = f"在知识库中查询「{query[:30]}」，未命中相关文档"
+
     return StepOutput(
         primary=primary,
         alternatives=[],
         metadata={
-            "performed": has,
+            "performed": has and not should_escalate,
             "sources": short,
             "context": context if has else "",
             "query": query,
+            "confidence": conf_result,
+            "should_escalate": should_escalate,
         },
     )
 
 
-def _do_answer(step, plan, outputs, question, style_hint: str = ""):
+def _do_tool(step, question, user: UserContext | None = None):
+    """执行工具调用步骤。由 Planner 规划，instruction 中含工具名和参数。
+
+    用 LLM 将自然语言指令解析为结构化 MCP 调用参数，
+    然后通过 MCP Server 执行，走 RBAC + 审计。
+    """
+    if user is None:
+        user = UserContext(user_id="anonymous")
+
+    # 用 LLM 解析指令 → 结构化参数
+    parse_prompt = f"""将以下指令解析为 MCP 工具调用参数。
+
+可用工具：query_ticket(ticket_id)、query_my_tickets(user_id)、create_ticket(title, description, category, priority)
+
+指令: {step.instruction}
+用户问题: {question}
+
+严格只输出 JSON，不要任何额外文字：
+{{"tool_name": "...", "arguments": {{...}}}}"""
+
+    try:
+        resp = planner_llm.invoke(parse_prompt)
+        parsed = _extract_json(str(resp.content)) or {}
+    except Exception as e:
+        return StepOutput(
+            primary=f"工具调用解析失败：{e}",
+            alternatives=[],
+            metadata={"error": str(e)},
+        )
+
+    tool_name = parsed.get("tool_name", "")
+    tool_args = parsed.get("arguments", {})
+
+    if not tool_name:
+        return StepOutput(
+            primary="无法从指令中识别工具名称，请检查 Planner 生成的 instruction",
+            alternatives=[],
+        )
+
+    # 通过 MCP Server 执行（含 RBAC + 审计）
+    result = mcp_server.handle_request(
+        "tools/call",
+        {"name": tool_name, "arguments": tool_args},
+        user,
+        ""  # session_id 可后续接入
+    )
+
+    if "error" in result:
+        primary = f"工具 {tool_name} 执行失败：{result['error'].get('message', '未知错误')}"
+        audit_logger.log_tool_call(user, tool_name, tool_args, primary, False)
+    else:
+        content = result.get("content", [])
+        primary = content[0].get("text", "") if content else "工具执行完成，无返回内容"
+        audit_logger.log_tool_call(user, tool_name, tool_args, primary[:500], True)
+
+    return StepOutput(
+        primary=primary,
+        alternatives=[],
+        metadata={
+            "tool_name": tool_name,
+            "tool_args": tool_args,
+            "tool_result": primary,
+        },
+    )
+
+
+def _do_answer(step, plan, outputs, question, style_hint: str = "", memory_context: str = ""):
     style_text = STYLE_HINTS.get(style_hint, "保持平实清晰的语气。")
+    # 拼接对话历史 + 本轮前序步骤
+    full_prior = _format_prior(outputs, plan, len(outputs))
+    if memory_context and memory_context != "（无历史对话）":
+        full_prior = f"【历史对话背景】\n{memory_context}\n\n【本轮分析】\n{full_prior}"
+
     prompt = ANSWER_STEP_PROMPT.format(
         question=question,
-        prior=_format_prior(outputs, plan, len(outputs)),
+        prior=full_prior,
         kb_context=_gather_kb_context(outputs),
         style=style_text,
         instruction=step.instruction or "（无具体指令）",
@@ -247,18 +345,59 @@ def _do_answer(step, plan, outputs, question, style_hint: str = ""):
         HumanMessage(content=question),
     ])
     text = str(resp.content).strip()
-    return StepOutput(primary=text, alternatives=[], style_hint=style_hint)
+
+    # PGE 反思循环：评估 + 不达标自动重生成
+    prior_text = full_prior  # 含记忆上下文 + 本轮前序步骤
+
+    def _regenerate(feedback: str) -> str:
+        regen_prompt = ANSWER_STEP_PROMPT.format(
+            question=question,
+            prior=prior_text,
+            kb_context=_gather_kb_context(outputs),
+            style=style_text + f"\n\n【改进要求】{feedback}",
+            instruction=step.instruction or "（无具体指令）",
+        )
+        r = exec_llm.invoke([
+            SystemMessage(content=regen_prompt),
+            HumanMessage(content=question),
+        ])
+        return str(r.content).strip()
+
+    refined, eval_result, regen_count = evaluate_and_refine(
+        question=question,
+        answer=text,
+        prior=prior_text,
+        generate_fn=_regenerate,
+        threshold=config.EVALUATION_THRESHOLD,
+    )
+
+    return StepOutput(
+        primary=refined,
+        alternatives=[],
+        style_hint=style_hint,
+        metadata={
+            "evaluation": eval_result.to_dict(),
+            "regenerations": regen_count,
+        },
+    )
 
 
 # --------------------------------------------------
 # Run / branch
 # --------------------------------------------------
 
-def stream_run(thread_id: str, user_message: str) -> Iterator[dict]:
+def stream_run(thread_id: str, user_message: str, user: UserContext | None = None) -> Iterator[dict]:
     """完整执行：先 plan，再逐步 execute；产出 SSE event 字典。"""
+    if user is None:
+        user = UserContext(user_id="anonymous")
+
+    # 加载滚动分层压缩记忆
+    memory = MemoryManager(thread_id)
+    memory_context = memory.get_context_for_llm()
+
     # 立即发送启动事件，避免 Render proxy 在 OpenAI 调用期间断开连接
     yield {"type": "run_started", "thread_id": thread_id}
-    plan = plan_steps(user_message)
+    plan = plan_steps(user_message, memory_context)
     state = RunState(thread_id=thread_id, user_message=user_message, plan=plan)
     RUNS[thread_id] = state
 
@@ -269,7 +408,7 @@ def stream_run(thread_id: str, user_message: str) -> Iterator[dict]:
     }
 
     for i, step in enumerate(plan):
-        out = execute_step(step, plan, state.outputs, user_message, i)
+        out = execute_step(step, plan, state.outputs, user_message, i, user=user, memory_context=memory_context)
         state.outputs.append(out)
         yield {
             "type": "step_complete",
@@ -280,6 +419,11 @@ def stream_run(thread_id: str, user_message: str) -> Iterator[dict]:
         }
 
     final = state.outputs[-1].primary if state.outputs else ""
+
+    # 持久化本轮对话到记忆系统
+    memory.add_turn("user", user_message)
+    memory.add_turn("ai", final[:2000])
+
     yield {
         "type": "done",
         "reply": final,

@@ -30,8 +30,17 @@ class Config:
     RETRIEVER_FETCH_K: int = 6  # MMR 检索时先取 top-k 再筛选
 
     # Agent 参数
-    CONFIDENCE_THRESHOLD: float = 0.4  # 低于此阈值转人工
+    CONFIDENCE_THRESHOLD: float = 0.4  # RAG 置信度低于此阈值转人工
+    EVALUATION_THRESHOLD: float = 0.7  # PGE 评估综合得分低于此阈值触发重生成
     MAX_ITERATIONS: int = 10  # Agent 最大循环次数
+    MAX_REGENERATIONS: int = 3  # PGE 反思循环最大重生成次数
+
+    # 滚动分层压缩记忆
+    MEMORY_DB_PATH: str = os.getenv("MEMORY_DB_PATH", "./memory.db")
+    MEMORY_WORKING_TURNS: int = 4       # Working memory 保留最近 N 轮完整对话
+    MEMORY_COMPRESSION_INTERVAL: int = 4  # 每 N 轮触发一次压缩
+    MEMORY_MAX_FACTS: int = 20          # 长期事实库容量上限
+    MEMORY_MAX_COMPRESSED: int = 10     # 压缩摘要条数上限
 
     # 服务
     SERVER_HOST: str = os.getenv("SERVER_HOST", "0.0.0.0")

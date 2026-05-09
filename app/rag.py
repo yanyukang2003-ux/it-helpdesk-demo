@@ -1,14 +1,20 @@
 """
 RAG 知识库模块
-负责文档导入、向量化存储、和检索
+负责文档导入、向量化存储、检索、置信度评估
 """
 
+import json
+import re
+
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import config
+from app.prompts import RAG_CONFIDENCE_PROMPT
+
+confidence_llm = ChatOpenAI(model=config.ROUTER_MODEL, temperature=0.0)
 
 
 def get_embeddings() -> OpenAIEmbeddings:
@@ -135,3 +141,77 @@ def retrieve(query: str) -> str:
         )
 
     return "\n\n---\n\n".join(context_parts)
+
+
+# --------------------------------------------------
+# 置信度独立计算
+# --------------------------------------------------
+
+def _extract_json(text: str) -> dict | None:
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    m = re.search(r"\{[\s\S]*\}", text)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
+    return None
+
+
+def calculate_confidence(query: str, context: str, sources: list[str]) -> dict:
+    """独立计算 RAG 检索置信度。
+
+    基于检索内容的相关性、完整性、来源可靠性三个维度评估，
+    低置信度时自动标记应转人工处理。
+    """
+    if not context or context.startswith("未找到") or context.startswith("知识库检索失败"):
+        return {
+            "relevance": 0.0,
+            "completeness": 0.0,
+            "reliability": 0.0,
+            "confidence": 0.0,
+            "should_escalate": True,
+            "reason": "知识库未命中相关文档，建议转人工处理",
+        }
+
+    prompt = RAG_CONFIDENCE_PROMPT.format(
+        question=query,
+        context=context[:3000],
+        sources=", ".join(sources) if sources else "无",
+    )
+
+    try:
+        resp = confidence_llm.invoke(prompt)
+        data = _extract_json(str(resp.content)) or {}
+    except Exception as e:
+        print(f"⚠️ 置信度评估失败: {e}")
+        heuristic_conf = min(0.6, len(sources) * 0.2)
+        return {
+            "relevance": heuristic_conf,
+            "completeness": heuristic_conf,
+            "reliability": heuristic_conf,
+            "confidence": heuristic_conf,
+            "should_escalate": heuristic_conf < config.CONFIDENCE_THRESHOLD,
+            "reason": f"评估失败，启发式估算 (命中 {len(sources)} 个来源)",
+        }
+
+    relevance = max(0.0, min(1.0, float(data.get("relevance", 0.5))))
+    completeness = max(0.0, min(1.0, float(data.get("completeness", 0.5))))
+    reliability = max(0.0, min(1.0, float(data.get("reliability", 0.5))))
+    confidence = round(relevance * 0.5 + completeness * 0.3 + reliability * 0.2, 4)
+
+    should_escalate = confidence < config.CONFIDENCE_THRESHOLD or bool(data.get("should_escalate", False))
+    reason = str(data.get("reason", ""))[:200]
+
+    return {
+        "relevance": relevance,
+        "completeness": completeness,
+        "reliability": reliability,
+        "confidence": confidence,
+        "should_escalate": should_escalate,
+        "reason": reason,
+    }
